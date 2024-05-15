@@ -1,0 +1,391 @@
+###############################################################################
+# Title: Crash Dataset Analysis for Ministry of Transport Interview
+#Author: Ahmad Mahmoodjanlou
+# date created: 11/05/2024
+
+###############################################################################
+###############################################################################
+# [1.0] load library
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(gridExtra)
+###############################################################################
+# [2.0] read  data 
+Crashes <- read.csv(file = "C:\\Users\\amjan\\OneDrive\\Desktop\\desktop files\\statistics\\Crash_Analysis_System_(CAS)_data.csv", stringsAsFactors=TRUE,na.strings=c("","NA"))
+str(Crashes)
+head(Crashes)
+summary(Crashes)
+
+# [2.1] cleaning data
+#Excluded X and Y as they are geographical coordinates
+Crashes$X<-NULL
+Crashes$Y<-NULL
+Crashes<-Crashes %>% mutate(region=str_extract(region, ".*(?= Region)"))
+# However, for each analysis extra manipulation will be implemented 
+##########################################################################################
+#                                      Data Analysis 
+##########################################################################################
+# [3.1] Distribution of crashes by severity and region
+########################################################################################## 
+# Summarise crashes by severity and region
+crashes_severity_by_region <- Crashes %>%
+                              filter(!is.na(region)) %>% 
+                              group_by(region, crashSeverity) %>%
+                              summarise(total_crashes = n(),.groups = "drop") %>% 
+                              group_by(region) %>%
+                              mutate(percentage = round(total_crashes / sum(total_crashes),3)*100)
+
+# visualization part --------------------------------------
+# Define a color palette for each severity level
+color_palette_severity <- c("Fatal Crash" = "red",
+                            "Serious Crash" = "orange",
+                             "Minor Crash" = "#FDE725",
+                             "Non-Injury Crash"="green")
+
+
+plot_3_1<-ggplot(crashes_severity_by_region, aes(x = region,
+                                       y = percentage,
+                                       fill = crashSeverity)) +
+       geom_bar(stat = "identity") +
+  geom_text(aes(label = ifelse(percentage > 0, paste0(percentage, "%"), "")), 
+            position = position_stack(vjust = 0.5), 
+            size = 3, 
+            color = "black") +  # Adding percentage labels
+       scale_fill_manual(values = color_palette_severity) +  # Use predefined color palette
+       labs(title = "Crashes by Severity and Region",
+       x = "Region",
+       y = "percentage of Crashes",
+       fill = "Severity") +
+       theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+       theme(legend.position = "bottom")  # Adjust legend position
+
+# Show the plot
+print(plot_3_1)
+
+##########################################################################################
+#[3.2] Explore the relationship between crash severity and weather in each region
+##########################################################################################
+
+crash_severity_by_weather_region <- Crashes %>%
+                                filter(crashSeverity != "Null",
+                                       weatherA != "Null", 
+                                !is.na(region)) %>% 
+                                group_by(region,weatherA,crashSeverity) %>%
+                                summarise(total_crashes = n(),.groups = "drop") 
+
+# Compute total crashes for each region and weather
+total_crashes_by_region_weather <- crash_severity_by_weather_region %>%
+                                   group_by(region, weatherA) %>%
+                                   summarise(total_crashes = sum(total_crashes),.groups = "drop")
+
+# Join the total crashes by region and weather back to the original data frame
+crash_severity_by_weather_region <- crash_severity_by_weather_region %>%
+                                    left_join(total_crashes_by_region_weather,
+                                              by = c("region", "weatherA"))
+
+# Compute proportion of total crashes for each combination
+crash_severity_by_weather_region <- crash_severity_by_weather_region %>%
+                                    mutate(percentage = round(total_crashes.x / total_crashes.y,3)*100) 
+
+# visualization part --------------------------------------
+# Define a color palette for each weather
+color_palette_weather <- c("Heavy rain" = "darkblue",
+                   "Light rain" = "lightblue",
+                   "Mist or Fog" = "gray",
+                   "Hail or Sleet"="yellow",
+                   "Snow"="orange",
+                   "Fine"="green")
+
+plot_3_2 <- ggplot(crash_severity_by_weather_region, aes(x = region, 
+                                                         y = percentage, 
+                                                         fill = weatherA)) +
+                          geom_col(position = "dodge") +
+                          scale_fill_manual(values = color_palette_weather) +  # Use predefined color palette
+                          facet_wrap(~ crashSeverity, scales = "free_y") +
+                         labs(title = "Percentage of Crashes by Region, Crash Severity, and Weather",
+                         x = "Region",
+                         y = "Percentage",
+                         fill = "Weather") +
+                        theme_minimal() +
+                        theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+                        theme(legend.position = "bottom")  # Adjust legend position
+
+# Show the plot
+print(plot_3_2)
+
+##########################################################################################
+#[3.3] Explore the relationship between fatal counts and holiday in each region
+##########################################################################################
+# Group by region and holiday, and compute total fatal counts
+fatal_counts_by_region_holiday<-Crashes%>%
+                              filter(!is.na(region),
+                                     !is.na(holiday),
+                                     !is.na(fatalCount))%>%
+                              group_by(region, holiday) %>%
+                              summarise(total_fatal_counts = sum(fatalCount),.groups = "drop")
+
+# Group by region and compute the total fatal counts in each region
+fatal_counts_by_region <- fatal_counts_by_region_holiday %>%
+                          group_by(region) %>%
+                          summarise(total_fatal_counts_region = sum(total_fatal_counts))
+  
+# Compute the percentage of fatal counts within each region and holiday
+percentage_fatal_counts <- fatal_counts_by_region_holiday %>%
+                           left_join(fatal_counts_by_region,
+                                     by = "region") %>%
+                           mutate(percentage = round(total_fatal_counts / total_fatal_counts_region,3)*100)
+
+# visualization part --------------------------------------
+  
+# Define a color palette for each holiday
+color_palette_holiday <- c("Christmas New Year" = "lightgreen",
+                           "Easter" = "lightyellow",
+                           "Labour Weekend" = "lightblue",
+                           "Queens Birthday"="lightpink") 
+
+
+plot_3_3<-ggplot(percentage_fatal_counts,aes(x=region,
+                                             y=percentage,
+                                             fill=holiday)) + 
+            geom_bar(stat="identity") +
+            scale_fill_manual(values = color_palette_holiday) +  # Use predefined color palette
+            labs(title = "Distribution of fatalities crashes by regions on public holidays",
+              )+
+            xlab("")+ 
+            ylab("Percentage of Fatalties")+
+            geom_text(aes(label = ifelse(percentage > 0, paste0(percentage, "%"), "")), #specify the label to be displayed only when the percentage is greater than zero
+            position = position_stack(vjust = 0.5), 
+            size = 3, 
+            color = "black") +  # Adding percentage labels
+              theme(axis.text.x = element_text(angle = 90, hjust = 1,size=12))
+
+# Show the plot
+print(plot_3_3)
+##########################################################################################
+# [3.4] Explore the relationship between crash counts and number of lanes in each region
+##########################################################################################
+#Summarise crashes by number of lanes and region
+crashes_lanes_by_region <- Crashes %>%
+                          filter(!is.na(region) , NumberOfLanes !=0) %>% 
+                          group_by(region, NumberOfLanes) %>%
+                          summarise(total_crashes = n(),.groups = "drop") 
+
+# visualization part --------------------------------------  
+
+plot_3_4 <- ggplot(crashes_lanes_by_region, aes(x = NumberOfLanes, y = total_crashes, color = region)) +
+           geom_point() + 
+          geom_smooth(method = "loess", 
+                      se = FALSE, 
+                      linetype = "dashed",
+                      span = 0.5) + # We can Adjust span parameter to control the degree of smoothing applied to the data 
+          theme_minimal() +
+          labs(title = "Relationship Between Number of Lanes and Crash Occurrence by Region",
+          x = "Number of Lanes",
+          y = "Number of Crashes",
+          color = "Region") +
+          scale_x_continuous(breaks = 1:9) +
+          theme(legend.position = "bottom") +
+          theme(legend.title = element_blank())  # Remove legend title
+
+# Show the plot
+print(plot_3_4)
+
+##########################################################################################
+#[3.5.1] Stack Bar chart : Explore the relationship between crash severity and type of vehicle in each region
+##########################################################################################
+keep_col<-c("region",
+            "bicycle",                  
+             "bus",                      
+             "carStationWagon",
+             "crashSeverity",
+             "fatalCount",
+             "motorcycle" )
+
+
+crash_severity_by_vehicle_region<-Crashes %>%
+                                  select(all_of(keep_col)) %>%
+                                  filter(!is.na(region)) 
+
+data_to_plot<-crash_severity_by_vehicle_region %>%
+              mutate(involve_bus=case_when(bus != 0  ~ "Yes",
+                               TRUE ~ "No"),
+              involve_bicycle=case_when(bicycle != 0  ~ "Yes",
+                                   TRUE ~ "No"),
+              involve_motorcycle=case_when(motorcycle != 0  ~ "Yes",
+                                      TRUE ~ "No"),
+              involve_carStationWagon=case_when(carStationWagon != 0  ~ "Yes",
+                                           TRUE ~ "No")) %>% na.omit()%>%
+              group_by(region, crashSeverity) %>%
+              summarise(
+              total_crashes = n(),
+              involve_bus_yes = sum(involve_bus == "Yes"),
+              involve_bicycle_yes = sum(involve_bicycle == "Yes"),
+              involve_motorcycle_yes = sum(involve_motorcycle == "Yes"),
+              involve_carStationWagon_yes = sum(involve_carStationWagon == "Yes"),
+              .groups = "drop") %>%
+              mutate(
+               across(starts_with('involve'), 
+                      ~./total_crashes * 100,
+                      .names = 'percentage_{.col}') )
+
+
+
+
+# Filter data for each severity level and pivot it for better visualization
+fatal_data <- data_to_plot %>%
+               filter(crashSeverity == "Fatal Crash") %>%
+               pivot_longer(starts_with("percentage_involve"), 
+               names_to = "vehicle",
+               values_to = "percentage")%>% 
+               mutate(percentage=round(percentage,2))%>%
+  mutate(vehicle = str_extract(vehicle, "(?<=percentage_involve_).*?(?=_yes)"))
+
+
+
+minor_data <- data_to_plot %>%
+              filter(crashSeverity == "Minor Crash") %>%
+              pivot_longer(starts_with("percentage_involve"), 
+              names_to = "vehicle",
+              values_to = "percentage") %>% 
+              mutate(percentage=round(percentage,2))%>%
+  mutate(vehicle = str_extract(vehicle, "(?<=percentage_involve_).*?(?=_yes)"))
+
+serious_data <- data_to_plot %>%
+                filter(crashSeverity == "Serious Crash") %>%
+                pivot_longer(starts_with("percentage_involve"), 
+                names_to = "vehicle",
+                values_to = "percentage")%>% 
+                mutate(percentage=round(percentage,2))%>%
+  mutate(vehicle = str_extract(vehicle, "(?<=percentage_involve_).*?(?=_yes)"))
+
+non_injury_data <- data_to_plot %>%
+                   filter(crashSeverity == "Non-Injury Crash") %>%
+                   pivot_longer(starts_with("percentage_involve"), 
+                   names_to = "vehicle",
+                   values_to = "percentage")%>% 
+                   mutate(percentage=round(percentage,2))%>%
+  mutate(vehicle = str_extract(vehicle, "(?<=percentage_involve_).*?(?=_yes)"))
+
+# Function to create stacked bar chart
+create_stacked_bar_chart <- function(data, severity_level) {
+  ggplot(data, aes(x = region, y = percentage, fill = vehicle)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = ifelse(percentage > 0, paste0(percentage, "%"), "")), 
+              position = position_stack(vjust = 0.5), 
+              size = 2, 
+              color = "black") +  
+    labs(title = severity_level, x = "", y = "Percentage") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    guides(fill = guide_legend(keywidth = unit(0.5, "cm"),   # Adjust the size of the legend key
+                               keyheight = unit(0.25, "cm")))
+}
+
+# Create stacked bar charts for each severity level
+p1 <- create_stacked_bar_chart(fatal_data, "Fatal Crash")
+p2 <- create_stacked_bar_chart(minor_data, "Minor Crash")
+p3 <- create_stacked_bar_chart(serious_data, "Serious Crash")
+p4 <- create_stacked_bar_chart(non_injury_data, "Non-Injury Crash")
+
+
+# Arrange plots
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+
+
+
+##########################################################################################
+#[3.5.2] Pie chart : Explore the relationship between crash severity and type of vehicle in each region
+##########################################################################################  
+keep_col<-c("region",
+            "bicycle",                  
+            "bus",                      
+            "carStationWagon",
+            "crashSeverity",
+            "fatalCount",
+            "motorcycle"
+)
+
+
+
+crash_severity_by_vehicle_region<-Crashes %>%
+  select(all_of(keep_col)) %>%
+  filter(!is.na(region)) 
+
+region_name<-unique(crash_severity_by_vehicle_region$region)  
+
+# Define an empty list to store the table and figure for each region  
+region_list<-list()
+
+for (k in 1:length(region_name)){
+  
+  temp_data<-crash_severity_by_vehicle_region %>%
+    filter(region==region_name[k]) %>% 
+    mutate(involve_bus=case_when(bus != 0  ~ "Yes",
+                                 TRUE ~ "No"),
+           involve_bicycle=case_when(bicycle != 0  ~ "Yes",
+                                     TRUE ~ "No"),
+           involve_motorcycle=case_when(motorcycle != 0  ~ "Yes",
+                                        TRUE ~ "No"),
+           involve_carStationWagon=case_when(carStationWagon != 0  ~ "Yes",
+                                             TRUE ~ "No")) %>% 
+    na.omit()
+  
+  
+  data_to_plot <- temp_data %>%
+    group_by(region, crashSeverity) %>%
+    summarise(
+      total_crashes = n(),
+      involve_bus_yes = sum(involve_bus == "Yes"),
+      involve_bicycle_yes = sum(involve_bicycle == "Yes"),
+      involve_motorcycle_yes = sum(involve_motorcycle == "Yes"),
+      involve_carStationWagon_yes = sum(involve_carStationWagon == "Yes"),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      across(starts_with('involve'), ~./total_crashes * 100, .names = 'percentage_{.col}')
+    )
+  
+  # Convert data to long format
+  data_to_plot_long <- pivot_longer(data_to_plot,
+                                    starts_with("involve"), 
+                                    names_to = "vehicle",
+                                    values_to = "count")%>%
+    mutate(vehicle = str_extract(vehicle, "(?<=involve_).*?(?=_yes)"))
+  # visualization part --------------------------------------     
+  # Plot pie chart
+  
+  plot_3_5_2<-ggplot(data_to_plot_long, aes(x = "", 
+                                          y = count, 
+                                          fill = vehicle)) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar("y", start = 0) +
+    labs(title = paste("Percentage of Vehicle Involvement",region_name[k]),
+         fill = "Vehicle Type") +
+    theme_void() +
+    theme(legend.position = "right")
+  
+  
+  region_list[[k]] <- list(
+    'table' = data_to_plot,
+    'figure' = plot_3_5_2 )   
+  
+}  
+  
+  
+  
+  
+  
+######################################################################
+# End 
+#######################################################################
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
